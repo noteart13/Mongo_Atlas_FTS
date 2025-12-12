@@ -54,17 +54,7 @@ print("✅ MongoDB Atlas FTS API started!")
 print("📚 Swagger UI: http://localhost:5010/docs")
 print("📖 ReDoc: http://localhost:5010/redoc")
 
-# Khởi tạo FastAPI app (không dùng lifespan)
-app = FastAPI(
-    title="MongoDB Atlas FTS API",
-    description="MongoDB Full Text Search Demo with FastAPI",
-    version="1.0.0",
-    swagger_ui_parameters={"persistAuthorization": False}
-)
-
-print("✅ MongoDB Atlas FTS API started!")
-print("📚 Swagger UI: http://localhost:5010/docs")
-print("📖 ReDoc: http://localhost:5010/redoc")
+# (removed duplicate FastAPI initialization)
 
 # Mount static files (if exists)
 import os

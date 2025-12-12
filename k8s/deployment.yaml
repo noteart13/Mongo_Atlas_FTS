@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongodb-fts-api
+  namespace: mongodb-fts
+  labels:
+    app: mongodb-fts-api
+spec:
+  replicas: 1  # Giảm xuống 1 để dễ debug
+  selector:
+    matchLabels:
+      app: mongodb-fts-api
+  template:
+    metadata:
+      labels:
+        app: mongodb-fts-api
+    spec:
+      containers:
+      - name: fastapi-app
+        image: us-central1-docker.pkg.dev/aagi-raw-band-downloader/mongodb-fts-api/mongodb-fts-api:latest
+        ports:
+        - containerPort: 5010
+        env:
+        - name: MONGODB_URI
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secret
+              key: mongodb-uri
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        livenessProbe:
+          httpGet:
+            path: /api
+            port: 5010
+          initialDelaySeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /api
+            port: 5010
+          initialDelaySeconds: 5
+          timeoutSeconds: 5

@@ -1,0 +1,73 @@
+name: Deploy to GKE
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+
+env:
+  GCP_PROJECT_ID: aagi-raw-band-downloader
+  GCP_REGION: us-central1
+  REGISTRY_HOSTNAME: us-central1-docker.pkg.dev
+  IMAGE_NAME: mongodb-fts-api
+  GKE_CLUSTER: mongodb-fts-gke
+  GKE_ZONE: us-central1-a
+  NAMESPACE: mongodb-fts
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🔐 Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+        service_account: github-actions@aagi-raw-band-downloader.iam.gserviceaccount.com
+
+    - name: ☁️ Set up Google Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: 🔑 Configure Docker authentication
+      run: |
+        gcloud auth configure-docker ${{ env.REGISTRY_HOSTNAME }}
+
+    - name: 🔨 Build Docker image
+      run: |
+        docker build -t ${{ env.REGISTRY_HOSTNAME }}/${{ env.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/${{ env.IMAGE_NAME }}:latest .
+        docker build -t ${{ env.REGISTRY_HOSTNAME }}/${{ env.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }} .
+
+    - name: 📤 Push Docker image to Artifact Registry
+      run: |
+        docker push ${{ env.REGISTRY_HOSTNAME }}/${{ env.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/${{ env.IMAGE_NAME }}:latest
+        docker push ${{ env.REGISTRY_HOSTNAME }}/${{ env.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+    - name: 📍 Get GKE cluster credentials
+      run: |
+        gcloud container clusters get-credentials ${{ env.GKE_CLUSTER }} \
+          --zone ${{ env.GKE_ZONE }} \
+          --project ${{ env.GCP_PROJECT_ID }}
+
+    - name: 🚀 Restart Kubernetes deployment
+      run: |
+        kubectl rollout restart deployment/${{ env.IMAGE_NAME }} -n ${{ env.NAMESPACE }}
+        kubectl rollout status deployment/${{ env.IMAGE_NAME }} -n ${{ env.NAMESPACE }} --timeout=5m
+
+    - name: ✅ Get service info
+      run: |
+        kubectl get svc -n ${{ env.NAMESPACE }}
+        kubectl get pods -n ${{ env.NAMESPACE }}
+
+    - name: 📊 Deployment status
+      if: success()
+      run: |
+        echo "✅ Deployment successful!"
+        echo "Service IP: $(kubectl get svc mongodb-fts-api -n mongodb-fts -o jsonpath='{.status.loadBalancer.ingress[0].ip}')"
+        echo "Swagger UI: http://$(kubectl get svc mongodb-fts-api -n mongodb-fts -o jsonpath='{.status.loadBalancer.ingress[0].ip}')/docs"

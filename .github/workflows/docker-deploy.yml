@@ -1,0 +1,59 @@
+name: Build and Deploy to Docker Hub
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: |
+          noteart13/mongodb-fts-api:latest
+          noteart13/mongodb-fts-api:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Setup gcloud CLI
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        version: 'latest'
+        project_id: aagi-raw-band-downloader
+    
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v1
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+    
+    - name: Get GKE credentials
+      run: |
+        gcloud container clusters get-credentials mongodb-fts-gke --zone us-central1-a
+    
+    - name: Update Kubernetes deployment
+      run: |
+        kubectl set image deployment/mongodb-fts-api \
+          fastapi-app=noteart13/mongodb-fts-api:${{ github.sha }} \
+          -n mongodb-fts --record
+        
+        kubectl rollout status deployment/mongodb-fts-api \
+          -n mongodb-fts --timeout=5m

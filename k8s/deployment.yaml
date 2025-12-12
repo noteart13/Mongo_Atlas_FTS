@@ -17,7 +17,8 @@ spec:
     spec:
       containers:
       - name: fastapi-app
-        image: us-central1-docker.pkg.dev/aagi-raw-band-downloader/mongodb-fts-api/mongodb-fts-api:latest
+        image: noteart13/mongodb-fts-api:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 5010
         env:

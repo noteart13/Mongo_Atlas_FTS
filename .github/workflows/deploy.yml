@@ -1,73 +1,44 @@
-name: Deploy to GKE
+name: Deploy to Kubernetes
 
 on:
   push:
-    branches:
-      - main
-      - develop
-  pull_request:
-    branches:
-      - main
-
-env:
-  GCP_PROJECT_ID: aagi-raw-band-downloader
-  GCP_REGION: us-central1
-  REGISTRY_HOSTNAME: us-central1-docker.pkg.dev
-  IMAGE_NAME: mongodb-fts-api
-  GKE_CLUSTER: mongodb-fts-gke
-  GKE_ZONE: us-central1-a
-  NAMESPACE: mongodb-fts
+    branches: [ main ]  # Thay đổi thành branch chính của bạn nếu cần
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
     
     steps:
-    - name: 📥 Checkout code
-      uses: actions/checkout@v4
-
-    - name: 🔐 Authenticate to Google Cloud
-      uses: google-github-actions/auth@v2
+    - uses: actions/checkout@v3
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Login to Google Container Registry
+      uses: docker/login-action@v2
       with:
-        workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-        service_account: github-actions@aagi-raw-band-downloader.iam.gserviceaccount.com
-
-    - name: ☁️ Set up Google Cloud SDK
-      uses: google-github-actions/setup-gcloud@v2
-
-    - name: 🔑 Configure Docker authentication
+        registry: us-central1-docker.pkg.dev
+        username: _json_key
+        password: ${{ secrets.GCP_SA_KEY }}
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: true
+        tags: us-central1-docker.pkg.dev/aagi-raw-band-downloader/mongodb-fts-api/mongodb-fts-api:latest
+    
+    - name: Install kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.24.0'  # Chọn phiên bản phù hợp
+    
+    - name: Configure kubeconfig
       run: |
-        gcloud auth configure-docker ${{ env.REGISTRY_HOSTNAME }}
-
-    - name: 🔨 Build Docker image
+        echo "${{ secrets.KUBE_CONFIG }}" > kubeconfig.yaml
+        export KUBECONFIG=./kubeconfig.yaml
+    
+    - name: Deploy to Kubernetes
       run: |
-        docker build -t ${{ env.REGISTRY_HOSTNAME }}/${{ env.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/${{ env.IMAGE_NAME }}:latest .
-        docker build -t ${{ env.REGISTRY_HOSTNAME }}/${{ env.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }} .
-
-    - name: 📤 Push Docker image to Artifact Registry
-      run: |
-        docker push ${{ env.REGISTRY_HOSTNAME }}/${{ env.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/${{ env.IMAGE_NAME }}:latest
-        docker push ${{ env.REGISTRY_HOSTNAME }}/${{ env.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-
-    - name: 📍 Get GKE cluster credentials
-      run: |
-        gcloud container clusters get-credentials ${{ env.GKE_CLUSTER }} \
-          --zone ${{ env.GKE_ZONE }} \
-          --project ${{ env.GCP_PROJECT_ID }}
-
-    - name: 🚀 Restart Kubernetes deployment
-      run: |
-        kubectl rollout restart deployment/${{ env.IMAGE_NAME }} -n ${{ env.NAMESPACE }}
-        kubectl rollout status deployment/${{ env.IMAGE_NAME }} -n ${{ env.NAMESPACE }} --timeout=5m
-
-    - name: ✅ Get service info
-      run: |
-        kubectl get svc -n ${{ env.NAMESPACE }}
-        kubectl get pods -n ${{ env.NAMESPACE }}
-
-    - name: 📊 Deployment status
-      if: success()
-      run: |
-        echo "✅ Deployment successful!"
-        echo "Service IP: $(kubectl get svc mongodb-fts-api -n mongodb-fts -o jsonpath='{.status.loadBalancer.ingress[0].ip}')"
-        echo "Swagger UI: http://$(kubectl get svc mongodb-fts-api -n mongodb-fts -o jsonpath='{.status.loadBalancer.ingress[0].ip}')/docs"
+        kubectl set image deployment/mongodb-fts-api -n mongodb-fts fastapi-app=us-central1-docker.pkg.dev/aagi-raw-band-downloader/mongodb-fts-api/mongodb-fts-api:latest
+        kubectl rollout status deployment/mongodb-fts-api -n mongodb-fts

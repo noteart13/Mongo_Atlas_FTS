@@ -46,7 +46,7 @@ crossorigin=""></script>
 </html>
 
 <script src="https://twitter.github.io/typeahead.js/js/jquery-1.10.2.min.js"></script>
-<script src="maphelper.js"></script>
+<script src="/static/maphelper.js"></script>
 
 <script>
 
@@ -118,9 +118,10 @@ crossorigin=""></script>
         }
 
         $.ajax({
-            url: `/geoNear?pivot=${pivot}&latitude=${marker_coord.lat}&longtitude=${marker_coord.lng}&property_type=${propertyType}&keyword=${keyword}`
+            url: `/api/geo/near?max_distance=${pivot}&latitude=${marker_coord.lat}&longtitude=${marker_coord.lng}&property_type=${propertyType}`
             }).done(function(results){
-                var jsonResults = JSON.parse(results).docs
+                // FastAPI trả JSON object { docs, count }
+                var jsonResults = results && results.docs ? results.docs : JSON.parse(results).docs
                 console.log(jsonResults)
                 addResultMarkersNear(jsonResults)
             })

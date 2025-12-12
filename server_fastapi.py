@@ -1,10 +1,11 @@
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Depends, Header
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel, ConfigDict
 from typing import Optional, List, Any
 import pymongo
-from config import mongo_uri
+from config import mongo_uri, API_KEY
 import ast
 import json
 
@@ -45,7 +46,8 @@ except Exception as e:
 app = FastAPI(
     title="MongoDB Atlas FTS API",
     description="MongoDB Full Text Search Demo with FastAPI",
-    version="1.0.0"
+    version="1.0.0",
+    swagger_ui_parameters={"persistAuthorization": False}
 )
 
 print("✅ MongoDB Atlas FTS API started!")
@@ -56,7 +58,8 @@ print("📖 ReDoc: http://localhost:5010/redoc")
 app = FastAPI(
     title="MongoDB Atlas FTS API",
     description="MongoDB Full Text Search Demo with FastAPI",
-    version="1.0.0"
+    version="1.0.0",
+    swagger_ui_parameters={"persistAuthorization": False}
 )
 
 print("✅ MongoDB Atlas FTS API started!")
@@ -70,6 +73,43 @@ if os.path.exists("templates/static"):
 elif os.path.exists("static"):
     app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# ==================== SECURITY ====================
+
+def verify_api_key(api_key: str = Header(default=None, alias="X-API-Key")):
+    """Xác thực API key qua header `X-API-Key`."""
+    if not api_key or api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+# ==================== OPENAPI (Swagger Authorize) ====================
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+
+    components = openapi_schema.setdefault("components", {})
+    security_schemes = components.setdefault("securitySchemes", {})
+    security_schemes["ApiKeyAuth"] = {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Nhập API key để gọi các endpoint"
+    }
+
+    # Áp dụng yêu cầu bảo mật cho tất cả các operations
+    openapi_schema["security"] = [{"ApiKeyAuth": []}]
+
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
+
 # ==================== MODELS ====================
 
 class SearchResponse(BaseModel):
@@ -78,9 +118,18 @@ class SearchResponse(BaseModel):
     
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
+# ==================== PAGES (serve HTML) ====================
+
+# Serve the Geo Near demo page directly (static HTML)
+@app.get("/geonear", include_in_schema=False)
+def geonear_page():
+    if os.path.exists("templates/geonear.html"):
+        return FileResponse("templates/geonear.html")
+    raise HTTPException(status_code=404, detail="geonear.html not found")
+
 # ==================== SEARCH ENDPOINTS ====================
 
-@app.get("/api/search", response_model=SearchResponse, tags=["Search"])
+@app.get("/api/search", response_model=SearchResponse, tags=["Search"], dependencies=[Depends(verify_api_key)])
 def search(query: str = Query(..., description="Search query string")):
     """
     Tìm kiếm phim theo query string
@@ -109,7 +158,7 @@ def search(query: str = Query(..., description="Search query string")):
 
 # ==================== AUTOCOMPLETE ENDPOINTS ====================
 
-@app.get("/api/autocomplete", response_model=List[dict], tags=["Autocomplete"])
+@app.get("/api/autocomplete", response_model=List[dict], tags=["Autocomplete"], dependencies=[Depends(verify_api_key)])
 def autocomplete(query: str = Query(..., description="Autocomplete query (min 3 chars)")):
     """
     Gợi ý tiêu đề phim
@@ -142,7 +191,7 @@ def autocomplete(query: str = Query(..., description="Autocomplete query (min 3 
 
 # ==================== GEOSPATIAL ENDPOINTS ====================
 
-@app.get("/api/geo/circle", response_model=SearchResponse, tags=["Geospatial"])
+@app.get("/api/geo/circle", response_model=SearchResponse, tags=["Geospatial"], dependencies=[Depends(verify_api_key)])
 def geo_circle(
     radius: int = Query(..., description="Radius in meters"),
     latitude: float = Query(..., description="Center latitude"),
@@ -166,7 +215,7 @@ def geo_circle(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Geo search failed: {str(e)}")
 
-@app.get("/api/geo/box", response_model=SearchResponse, tags=["Geospatial"])
+@app.get("/api/geo/box", response_model=SearchResponse, tags=["Geospatial"], dependencies=[Depends(verify_api_key)])
 def geo_box(
     lat_min: float = Query(..., description="Minimum latitude"),
     lon_min: float = Query(..., description="Minimum longitude"),
@@ -191,75 +240,49 @@ def geo_box(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Geo search failed: {str(e)}")
 
-@app.get("/api/geo/near", response_model=SearchResponse, tags=["Geospatial"])
+@app.get("/api/geo/near", response_model=SearchResponse, tags=["Geospatial"], dependencies=[Depends(verify_api_key)])
 def geo_near(
     latitude: float = Query(..., description="Latitude"),
     longtitude: float = Query(..., description="Longitude"),
     max_distance: int = Query(5000, description="Maximum distance in meters"),
-    property_type: str = Query("Apartment", description="Property type")
+    property_type: str = Query("Apartment", description="Property type"),
+    keyword: Optional[str] = Query(None, description="Optional keyword to boost description matches")
 ):
     """
     Tìm kiếm property gần nhất (sử dụng MongoDB geospatial query)
     
     Ví dụ: `/api/geo/near?latitude=41.3851&longtitude=2.1734&property_type=Apartment&max_distance=5000`
     """
-   # Kết nối MongoDB
-try:
-    print("🔄 Đang kết nối đến MongoDB...")
-    import ssl
-    from urllib.parse import quote_plus
-    
-    # Tạo URI kết nối với các tham số SSL
-    client = pymongo.MongoClient(
-        mongo_uri,
-        tls=True,
-        tlsAllowInvalidCertificates=True,  # Tạm thời cho phép chứng chỉ không hợp lệ
-        retryWrites=True,
-        w='majority',
-        connectTimeoutMS=30000,
-        socketTimeoutMS=30000,
-        serverSelectionTimeoutMS=30000
-    )
-    
-    # Test the connection
-    print("🔍 Đang kiểm tra kết nối MongoDB...")
-    client.admin.command('ping')
-    print("✅ Kết nối MongoDB thành công!")
-    
-    # Kết nối đến các collection
-    db = client.get_database('sample_mflix')
-    collection = db['movies']
-    print(f"✅ Đã kết nối đến collection 'movies' với {collection.estimated_document_count()} documents")
-    
-    db_airbnb = client.get_database('sample_airbnb')
-    collection_airbnb = db_airbnb['listingsAndReviews']
-    print(f"✅ Đã kết nối đến collection 'listingsAndReviews' với {collection_airbnb.estimated_document_count()} documents")
-    
-    # Gán biến toàn cục
-    conn = client
+    try:
+        # Dựng pipeline từ mẫu query34.json
+        with open("queries/query34.json", "r", encoding='utf-8') as f:
+            json_agg_query = json.loads(f.read())
 
-except pymongo.errors.ServerSelectionTimeoutError as err:
-    print(f"❌ Lỗi kết nối MongoDB (Timeout): {str(err)}")
-    print("🔍 Vui lòng kiểm tra:")
-    print("1. Kết nối mạng của cluster Kubernetes đến internet")
-    print("2. IP của cluster đã được thêm vào whitelist trên MongoDB Atlas")
-    print("3. Thông tin kết nối trong secret 'mongodb-secret'")
-    raise
+        # Thiết lập near origin và pivot (sử dụng max_distance)
+        json_agg_query[0]['$search']['compound']['should'][0]['near']['origin']['coordinates'] = [longtitude, latitude]
+        json_agg_query[0]['$search']['compound']['should'][0]['near']['pivot'] = max_distance
 
-except pymongo.errors.ConfigurationError as err:
-    print(f"❌ Lỗi cấu hình MongoDB: {str(err)}")
-    print("🔍 Vui lòng kiểm tra lại chuỗi kết nối MONGODB_URI")
-    raise
+        # Bắt buộc khớp theo property_type
+        json_agg_query[0]['$search']['compound']['must']['text']['query'] = property_type
 
-except Exception as e:
-    print(f"❌ Lỗi không xác định khi kết nối MongoDB: {str(e)}")
-    print("🔍 Vui lòng kiểm tra logs để biết thêm chi tiết")
-    raise
+        # Nếu có keyword thì tăng điểm theo mô tả; nếu không thì bỏ phần should thứ hai
+        if keyword and keyword.strip():
+            json_agg_query[0]['$search']['compound']['should'][1]['text']['query'] = keyword
+        else:
+            json_agg_query[0]['$search']['compound']['should'] = [
+                json_agg_query[0]['$search']['compound']['should'][0]
+            ]
+
+        docs = list(collection_airbnb.aggregate(json_agg_query))
+        return SearchResponse(docs=docs, count=len(docs))
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Geo near failed: {str(e)}")
 
 
 # ==================== API INFO ====================
 
-@app.get("/api", tags=["Info"])
+@app.get("/api", tags=["Info"], dependencies=[Depends(verify_api_key)])
 def api_info():
     """Thông tin API"""
     return {
@@ -276,6 +299,11 @@ def api_info():
         "docs": "/docs",
         "redoc": "/redoc"
     }
+
+
+@app.get("/healthz", include_in_schema=False)
+def healthz():
+    return {"status": "ok"}
 
 if __name__ == "__main__":
     import uvicorn

@@ -16,7 +16,7 @@ collection_airbnb = conn['sample_airbnb']['listingsAndReviews']
 # endpoint``
 @app.route('/search', methods=['GET'])
 def search():
-    with open("queries/query30.json", "r", encoding = 'utf-8') as query_file:
+    with open("queries/query01.json", "r", encoding = 'utf-8') as query_file:
       agg_query=query_file.read()
     
     # Get the parameters from HTTP GET request

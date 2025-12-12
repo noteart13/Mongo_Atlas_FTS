@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: fastapi-app
-        image: noteart13/mongodb-fts-api:latest
+        image: us-central1-docker.pkg.dev/aagi-raw-band-downloader/mongodb-fts-api/mongodb-fts-api:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 5010
@@ -27,6 +27,11 @@ spec:
             secretKeyRef:
               name: mongodb-secret
               key: mongodb-uri
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-key
+              key: API_KEY
         - name: PYTHONUNBUFFERED
           value: "1"
         resources:
@@ -38,13 +43,13 @@ spec:
             memory: "512Mi"
         livenessProbe:
           httpGet:
-            path: /api
+            path: /healthz
             port: 5010
           initialDelaySeconds: 10
           timeoutSeconds: 5
         readinessProbe:
           httpGet:
-            path: /api
+            path: /healthz
             port: 5010
           initialDelaySeconds: 5
           timeoutSeconds: 5

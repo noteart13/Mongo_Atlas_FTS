@@ -11,6 +11,21 @@ var markerFilterGroup3 = null;
 var isItFor2NDPolygon = false;
 var markerResultsFilterGroup = null;
 
+// ===== API Key handling (prompt once, persist, and attach to all requests) =====
+// Frontend does not handle API key; authorization is done in server via Swagger UI
+
+// Attach API key to every jQuery AJAX request
+if (typeof $ !== 'undefined') {
+    $.ajaxSetup({
+        beforeSend: function (xhr) {
+            var storedKey = localStorage.getItem('api_key');
+            if (storedKey && storedKey.trim() !== '') {
+                xhr.setRequestHeader('X-API-Key', storedKey.trim());
+            }
+        }
+    });
+}
+
 
 
 var greenIcon = new L.Icon({

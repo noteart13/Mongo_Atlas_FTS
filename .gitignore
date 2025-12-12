@@ -1,2 +1,53 @@
 __pycache__/
 .DS_Store
+# Environment variables (sensitive data)
+.env
+.env.local
+.env.*.local
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Keys and credentials
+*.key
+*.pem
+*.pfx
+*-key.json
+github-actions-key.json
+
+# Docker
+.docker/
+.dockerignore
+
+# Kubernetes
+k8s/*.yaml.bak
+
+# Misc
+.cache/
+.pytest_cache/
+.mypy_cache/

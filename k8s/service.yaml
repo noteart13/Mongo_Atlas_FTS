@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-atlas-fts-api
+  labels:
+    app: mongodb-atlas-fts-api
+spec:
+  type: LoadBalancer  # Hoặc ClusterIP nếu dùng Ingress
+  ports:
+  - port: 80
+    targetPort: 5011
+    protocol: TCP
+    name: http
+  selector:
+    app: mongodb-atlas-fts-api
+

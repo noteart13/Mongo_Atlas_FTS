@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongodb-atlas-fts-api
+  labels:
+    app: mongodb-atlas-fts-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb-atlas-fts-api
+  template:
+    metadata:
+      labels:
+        app: mongodb-atlas-fts-api
+    spec:
+      dnsPolicy: ClusterFirst
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "2"
+        - name: edns0
+      containers:
+      - name: mongodb-atlas-fts-api
+        image: us-central1-docker.pkg.dev/aagi-raw-band-downloader/mongodb-fts-api/mongodb-atlas-fts-api:latest
+        ports:
+        - containerPort: 5011
+          name: http
+        env:
+        - name: PORT
+          value: "5011"
+        - name: MONGODB_URI
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secret
+              key: uri
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secret
+              key: api-key
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 5011
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 5011
+          initialDelaySeconds: 5
+          periodSeconds: 5
+
